@@ -5,6 +5,7 @@ checkpoints
 *.pyc
 .idea/
 __pycache__
+output/
 results
 checkpoints_bak
 cityscapes

@@ -22,12 +22,14 @@ import matplotlib
 import matplotlib.pyplot as plt
 from glob import glob
 
-def get_argparser():
+def get_argparser(scene):
     parser = argparse.ArgumentParser()
-
+    data_dir = '/home/du/Proj/3Dv_Reconstruction/NeuRIS/Data/dataset/indoor'
+    input = os.path.join(data_dir, scene, 'image')
+    output = os.path.join(data_dir, scene, 'Deeplab')
     # Datset Options
     parser.add_argument("--input", type=str, required=False,
-                        default="/home/du/Proj/3Dv_Reconstruction/NeuRIS/Data/dataset/indoor/scene0169_00/image")
+                        default=input)
     parser.add_argument("--dataset", type=str, default='scannet',
                         choices=['voc', 'cityscapes', 'scannet'], help='Name of training set')
 
@@ -44,7 +46,7 @@ def get_argparser():
     parser.add_argument("--output_stride", type=int, default=16, choices=[8, 16])
 
     # Train Options
-    parser.add_argument("--save_val_results_to", default='output/scene0169_00',
+    parser.add_argument("--save_val_results_to", default=output,
                         help="save segmentation results to the specified dir")
 
     parser.add_argument("--crop_val", action='store_true', default=False,
@@ -60,8 +62,8 @@ def get_argparser():
                         help="GPU ID")
     return parser
 
-def main():
-    opts = get_argparser().parse_args()
+def main(scene):
+    opts = get_argparser(scene).parse_args()
     if opts.dataset.lower() == 'voc':
         opts.num_classes = 21
         decode_fn = VOCSegmentation.decode_target
@@ -142,4 +144,7 @@ def main():
                 colorized_preds.save(os.path.join(opts.save_val_results_to,'semantic_pred_vis', img_name+'.png'))
 
 if __name__ == '__main__':
-    main()
+    scene_list = ['scene0050_00']
+    for scene in scene_list:
+        print(f'---process scene: {scene}---')
+        main(scene)

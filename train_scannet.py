@@ -10,6 +10,7 @@ from torch.utils import data
 from datasets import VOCSegmentation, Cityscapes
 from utils import ext_transforms as et
 from metrics import StreamSegMetrics
+from datasets import scannetv2
 
 import torch
 import torch.nn as nn
@@ -19,15 +20,14 @@ from PIL import Image
 import matplotlib
 import matplotlib.pyplot as plt
 
-
 def get_argparser():
     parser = argparse.ArgumentParser()
 
     # Datset Options
-    parser.add_argument("--data_root", type=str, default='/home/du/Proj/Dataset/',
+    parser.add_argument("--data_root", type=str, default='/home/yatai/Proj/Dataset',
                         help="path to Dataset")
-    parser.add_argument("--dataset", type=str, default='voc',
-                        choices=['voc', 'cityscapes'], help='Name of dataset')
+    parser.add_argument("--dataset", type=str, default='scannet',
+                        choices=['voc', 'cityscapes', 'scannet'], help='Name of dataset')
     parser.add_argument("--num_classes", type=int, default=None,
                         help="num classes (default: None)")
 
@@ -46,22 +46,22 @@ def get_argparser():
     parser.add_argument("--test_only", action='store_true', default=False)
     parser.add_argument("--save_val_results", action='store_true', default=False,
                         help="save segmentation results to \"./results\"")
-    parser.add_argument("--total_itrs", type=int, default=30e3,
-                        help="epoch number (default: 30k)")
+    parser.add_argument("--total_itrs", type=int, default=1e5,
+                        help="epoch number (default: 60k)")
     parser.add_argument("--lr", type=float, default=0.01,
                         help="learning rate (default: 0.01)")
     parser.add_argument("--lr_policy", type=str, default='poly', choices=['poly', 'step'],
                         help="learning rate scheduler policy")
-    parser.add_argument("--step_size", type=int, default=10000)
+    parser.add_argument("--step_size", type=int, default=5000)
     parser.add_argument("--crop_val", action='store_true', default=False,
                         help='crop validation (default: False)')
-    parser.add_argument("--batch_size", type=int, default=2,
+    parser.add_argument("--batch_size", type=int, default=16,
                         help='batch size (default: 16)')
-    parser.add_argument("--val_batch_size", type=int, default=2,
+    parser.add_argument("--val_batch_size", type=int, default=16,
                         help='batch size for validation (default: 4)')
     parser.add_argument("--crop_size", type=int, default=513)
 
-    parser.add_argument("--ckpt", default=None, type=str,
+    parser.add_argument("--ckpt", default='checkpoints/save/best_deeplabv3plus_resnet101_scannet_os16.pth', type=str,
                         help="restore from checkpoint")
     parser.add_argument("--continue_training", action='store_true', default=False)
 
@@ -75,7 +75,7 @@ def get_argparser():
                         help="random seed (default: 1)")
     parser.add_argument("--print_interval", type=int, default=10,
                         help="print interval of loss (default: 10)")
-    parser.add_argument("--val_interval", type=int, default=100,
+    parser.add_argument("--val_interval", type=int, default=500,
                         help="epoch interval for eval (default: 100)")
     parser.add_argument("--download", action='store_true', default=False,
                         help="download datasets")
@@ -150,6 +150,9 @@ def get_dataset(opts):
                                split='train', transform=train_transform)
         val_dst = Cityscapes(root=opts.data_root,
                              split='val', transform=val_transform)
+    if opts.dataset == 'scannet':
+        train_dst = scannetv2.Scannetv2Dataset(opts.data_root, phase='train')
+        val_dst = scannetv2.Scannetv2Dataset(opts.data_root, phase='val')
     return train_dst, val_dst
 
 
@@ -168,7 +171,7 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
         for i, (images, labels) in tqdm(enumerate(loader)):
 
             images = images.to(device, dtype=torch.float32)
-            labels = labels.to(device, dtype=torch.long)
+            labels = (labels-1).to(device, dtype=torch.long)
 
             outputs = model(images)
             preds = outputs.detach().max(dim=1)[1].cpu().numpy()
@@ -186,8 +189,8 @@ def validate(opts, model, loader, device, metrics, ret_samples_ids=None):
                     pred = preds[i]
 
                     image = (denorm(image) * 255).transpose(1, 2, 0).astype(np.uint8)
-                    target = loader.dataset.decode_target(target).astype(np.uint8)
-                    pred = loader.dataset.decode_target(pred).astype(np.uint8)
+                    target = loader.dataset.decode_target(target+1).astype(np.uint8)
+                    pred = loader.dataset.decode_target(pred+1).astype(np.uint8)
 
                     Image.fromarray(image).save('results/%d_image.png' % img_id)
                     Image.fromarray(target).save('results/%d_target.png' % img_id)
@@ -214,6 +217,8 @@ def main():
         opts.num_classes = 21
     elif opts.dataset.lower() == 'cityscapes':
         opts.num_classes = 19
+    elif opts.dataset.lower() == 'scannet':
+        opts.num_classes = 40
 
     # Setup visualization
     vis = Visualizer(port=opts.vis_port,
@@ -239,7 +244,7 @@ def main():
         train_dst, batch_size=opts.batch_size, shuffle=True, num_workers=2,
         drop_last=True)  # drop_last=True to ignore single-image batches.
     val_loader = data.DataLoader(
-        val_dst, batch_size=opts.val_batch_size, shuffle=True, num_workers=2)
+        val_dst, batch_size=opts.val_batch_size, shuffle=False, num_workers=2)
     print("Dataset: %s, Train set: %d, Val set: %d" %
           (opts.dataset, len(train_dst), len(val_dst)))
 
@@ -267,9 +272,9 @@ def main():
     # Set up criterion
     # criterion = utils.get_loss(opts.loss_type)
     if opts.loss_type == 'focal_loss':
-        criterion = utils.FocalLoss(ignore_index=255, size_average=True)
+        criterion = utils.FocalLoss(ignore_index=-1, size_average=True)
     elif opts.loss_type == 'cross_entropy':
-        criterion = nn.CrossEntropyLoss(ignore_index=255, reduction='mean')
+        criterion = nn.CrossEntropyLoss(ignore_index=-1, reduction='mean')
 
     def save_ckpt(path):
         """ save current model
@@ -324,11 +329,12 @@ def main():
         # =====  Train  =====
         model.train()
         cur_epochs += 1
-        for (images, labels) in train_loader:
+
+        for (images,labels) in train_loader:
             cur_itrs += 1
 
             images = images.to(device, dtype=torch.float32)
-            labels = labels.to(device, dtype=torch.long)
+            labels = (labels-1).to(device, dtype=torch.long)
 
             optimizer.zero_grad()
             outputs = model(images)
@@ -341,8 +347,8 @@ def main():
             if vis is not None:
                 vis.vis_scalar('Loss', cur_itrs, np_loss)
 
-            if (cur_itrs) % 10 == 0:
-                interval_loss = interval_loss / 10
+            if (cur_itrs) % 20 == 0:
+                interval_loss = interval_loss / 20
                 print("Epoch %d, Itrs %d/%d, Loss=%f" %
                       (cur_epochs, cur_itrs, opts.total_itrs, interval_loss))
                 interval_loss = 0.0
@@ -368,8 +374,8 @@ def main():
 
                     for k, (img, target, lbl) in enumerate(ret_samples):
                         img = (denorm(img) * 255).astype(np.uint8)
-                        target = train_dst.decode_target(target).transpose(2, 0, 1).astype(np.uint8)
-                        lbl = train_dst.decode_target(lbl).transpose(2, 0, 1).astype(np.uint8)
+                        target = train_dst.decode_target(target+1).transpose(2, 0, 1).astype(np.uint8)
+                        lbl = train_dst.decode_target(lbl+1).transpose(2, 0, 1).astype(np.uint8)
                         concat_img = np.concatenate((img, target, lbl), axis=2)  # concat along width
                         vis.vis_image('Sample %d' % k, concat_img)
                 model.train()

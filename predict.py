@@ -6,11 +6,13 @@ import os
 import random
 import argparse
 import numpy as np
+import cv2
 
 from torch.utils import data
 from datasets import VOCSegmentation, Cityscapes, cityscapes
 from torchvision import transforms as T
 from metrics import StreamSegMetrics
+from datasets import scannetv2
 
 import torch
 import torch.nn as nn
@@ -24,10 +26,10 @@ def get_argparser():
     parser = argparse.ArgumentParser()
 
     # Datset Options
-    parser.add_argument("--input", type=str, required=True,
-                        help="path to a single image or image directory")
-    parser.add_argument("--dataset", type=str, default='voc',
-                        choices=['voc', 'cityscapes'], help='Name of training set')
+    parser.add_argument("--input", type=str, required=False,
+                        default="/home/du/Proj/3Dv_Reconstruction/NeuRIS/Data/dataset/indoor/scene0169_00/image")
+    parser.add_argument("--dataset", type=str, default='scannet',
+                        choices=['voc', 'cityscapes', 'scannet'], help='Name of training set')
 
     # Deeplab Options
     available_models = sorted(name for name in network.modeling.__dict__ if name.islower() and \
@@ -35,14 +37,14 @@ def get_argparser():
                               network.modeling.__dict__[name])
                               )
 
-    parser.add_argument("--model", type=str, default='deeplabv3plus_mobilenet',
+    parser.add_argument("--model", type=str, default='deeplabv3plus_resnet101',
                         choices=available_models, help='model name')
     parser.add_argument("--separable_conv", action='store_true', default=False,
                         help="apply separable conv to decoder and aspp")
     parser.add_argument("--output_stride", type=int, default=16, choices=[8, 16])
 
     # Train Options
-    parser.add_argument("--save_val_results_to", default=None,
+    parser.add_argument("--save_val_results_to", default='output/scene0169_00',
                         help="save segmentation results to the specified dir")
 
     parser.add_argument("--crop_val", action='store_true', default=False,
@@ -52,7 +54,7 @@ def get_argparser():
     parser.add_argument("--crop_size", type=int, default=513)
 
     
-    parser.add_argument("--ckpt", default=None, type=str,
+    parser.add_argument("--ckpt", default='checkpoints/save/best_deeplabv3plus_resnet101_scannet_os16.pth', type=str,
                         help="resume from checkpoint")
     parser.add_argument("--gpu_id", type=str, default='0',
                         help="GPU ID")
@@ -66,6 +68,9 @@ def main():
     elif opts.dataset.lower() == 'cityscapes':
         opts.num_classes = 19
         decode_fn = Cityscapes.decode_target
+    elif opts.dataset.lower() == 'scannet':
+        opts.num_classes = 40
+        decode_fn = scannetv2.Scannetv2Dataset.decode_target
 
     os.environ['CUDA_VISIBLE_DEVICES'] = opts.gpu_id
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -118,20 +123,23 @@ def main():
             ])
     if opts.save_val_results_to is not None:
         os.makedirs(opts.save_val_results_to, exist_ok=True)
+        os.makedirs(os.path.join(opts.save_val_results_to,'semantic_pred'), exist_ok=True)
+        os.makedirs(os.path.join(opts.save_val_results_to,'semantic_pred_vis'), exist_ok=True)
     with torch.no_grad():
         model = model.eval()
         for img_path in tqdm(image_files):
             ext = os.path.basename(img_path).split('.')[-1]
-            img_name = os.path.basename(img_path)[:-len(ext)-1]
+            img_name = str(int(os.path.basename(img_path)[:-len(ext)-1]))
             img = Image.open(img_path).convert('RGB')
             img = transform(img).unsqueeze(0) # To tensor of NCHW
             img = img.to(device)
             
             pred = model(img).max(1)[1].cpu().numpy()[0] # HW
-            colorized_preds = decode_fn(pred).astype('uint8')
+            colorized_preds = decode_fn(pred+1).astype('uint8')
             colorized_preds = Image.fromarray(colorized_preds)
             if opts.save_val_results_to:
-                colorized_preds.save(os.path.join(opts.save_val_results_to, img_name+'.png'))
+                cv2.imwrite(os.path.join(opts.save_val_results_to,'semantic_pred', img_name+'.png'), (pred+1).astype('uint8'))
+                colorized_preds.save(os.path.join(opts.save_val_results_to,'semantic_pred_vis', img_name+'.png'))
 
 if __name__ == '__main__':
     main()

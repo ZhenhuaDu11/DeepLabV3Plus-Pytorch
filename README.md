@@ -44,6 +44,8 @@ Atrous Separable Convolution is supported in this repo. We provide a simple tool
 Single image:
 ```bash
 python predict.py --input datasets/data/cityscapes/leftImg8bit/train/bremen/bremen_000000_000019_leftImg8bit.png  --dataset cityscapes --model deeplabv3plus_mobilenet --ckpt checkpoints/best_deeplabv3plus_mobilenet_cityscapes_os16.pth --save_val_results_to test_results
+
+python predict.py --input /home/du/Proj/Dataset/ScanNet/scannet_frames/scannet_frames_25k/scene0000_00/color/000000.jpg  --dataset voc --model deeplabv3plus_resnet101 --ckpt checkpoints/best_deeplabv3plus_resnet101_voc_os16.pth --save_val_results_to test_results
 ```
 
 Image folder:

@@ -24,7 +24,7 @@ def get_argparser():
     parser = argparse.ArgumentParser()
 
     # Datset Options
-    parser.add_argument("--data_root", type=str, default='/home/yatai/Proj/Dataset',
+    parser.add_argument("--data_root", type=str, default='/home/du/Proj/Dataset',
                         help="path to Dataset")
     parser.add_argument("--dataset", type=str, default='scannet',
                         choices=['voc', 'cityscapes', 'scannet'], help='Name of dataset')

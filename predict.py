@@ -26,7 +26,7 @@ def get_argparser(scene):
     parser = argparse.ArgumentParser()
     data_dir = '/home/du/Proj/3Dv_Reconstruction/NeuRIS/Data/dataset/indoor'
     input = os.path.join(data_dir, scene, 'image')
-    output = os.path.join(data_dir, scene, 'Deeplab')
+    output = os.path.join(data_dir, scene, 'semantic')
     # Datset Options
     parser.add_argument("--input", type=str, required=False,
                         default=input)
@@ -125,26 +125,30 @@ def main(scene):
             ])
     if opts.save_val_results_to is not None:
         os.makedirs(opts.save_val_results_to, exist_ok=True)
-        os.makedirs(os.path.join(opts.save_val_results_to,'semantic_pred'), exist_ok=True)
-        os.makedirs(os.path.join(opts.save_val_results_to,'semantic_pred_vis'), exist_ok=True)
+        os.makedirs(os.path.join(opts.save_val_results_to,'deeplab_logits'), exist_ok=True)
+        os.makedirs(os.path.join(opts.save_val_results_to,'deeplab'), exist_ok=True)
+        os.makedirs(os.path.join(opts.save_val_results_to,'deeplab_vis'), exist_ok=True)
     with torch.no_grad():
         model = model.eval()
-        for img_path in tqdm(image_files):
-            ext = os.path.basename(img_path).split('.')[-1]
-            img_name = str(int(os.path.basename(img_path)[:-len(ext)-1]))
+        for img_path in tqdm(image_files, desc='predicting semantic'):
+            img_name = os.path.basename(img_path)
             img = Image.open(img_path).convert('RGB')
             img = transform(img).unsqueeze(0) # To tensor of NCHW
             img = img.to(device)
             
-            pred = model(img).max(1)[1].cpu().numpy()[0] # HW
-            colorized_preds = decode_fn(pred+1).astype('uint8')
+            logits = model(img)
+            pred = logits.max(1)[1].cpu().numpy()[0] # HW
+            colorized_preds = decode_fn(pred+1).astype(np.uint8)
             colorized_preds = Image.fromarray(colorized_preds)
             if opts.save_val_results_to:
-                cv2.imwrite(os.path.join(opts.save_val_results_to,'semantic_pred', img_name+'.png'), (pred+1).astype('uint8'))
-                colorized_preds.save(os.path.join(opts.save_val_results_to,'semantic_pred_vis', img_name+'.png'))
+                logits_copy = logits.squeeze().permute(1,2,0)
+                np.savez(os.path.join(opts.save_val_results_to,'deeplab_logits', img_name.split('.')[0]+'.npz'), logits_copy.cpu().numpy())
+
+                cv2.imwrite(os.path.join(opts.save_val_results_to,'deeplab', img_name), (pred+1).astype(np.uint8))
+                colorized_preds.save(os.path.join(opts.save_val_results_to,'deeplab_vis', img_name))
 
 if __name__ == '__main__':
-    scene_list = ['scene0050_00']
+    scene_list = ['scene0616_00']
     for scene in scene_list:
         print(f'---process scene: {scene}---')
         main(scene)

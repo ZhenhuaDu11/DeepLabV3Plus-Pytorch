@@ -22,11 +22,28 @@ import matplotlib
 import matplotlib.pyplot as plt
 from glob import glob
 
-def get_argparser(scene):
+def setup_seed(seed):
+    print(f'random seed :{seed}')
+
+    np.random.seed(seed)
+    random.seed(seed)
+
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+    torch.use_deterministic_algorithms(True)
+
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ['CUBLAS_WORKSPACE_CONFIG']=':4096:8'
+
+def get_argparser(scene, mode):
     parser = argparse.ArgumentParser()
     data_dir = '/home/du/Proj/3Dv_Reconstruction/NeuRIS/Data/dataset/indoor'
-    input = os.path.join(data_dir, scene, 'image')
-    output = os.path.join(data_dir, scene, 'semantic')
+    input = os.path.join(data_dir, scene, 'image', mode)
+    output = os.path.join(data_dir, scene, 'semantic', mode)
     # Datset Options
     parser.add_argument("--input", type=str, required=False,
                         default=input)
@@ -62,8 +79,8 @@ def get_argparser(scene):
                         help="GPU ID")
     return parser
 
-def main(scene):
-    opts = get_argparser(scene).parse_args()
+def main(scene, mode):
+    opts = get_argparser(scene, mode).parse_args()
     if opts.dataset.lower() == 'voc':
         opts.num_classes = 21
         decode_fn = VOCSegmentation.decode_target
@@ -148,7 +165,10 @@ def main(scene):
                 colorized_preds.save(os.path.join(opts.save_val_results_to,'deeplab_vis', img_name))
 
 if __name__ == '__main__':
+    setup_seed(42)
     scene_list = ['scene0616_00']
     for scene in scene_list:
         print(f'---process scene: {scene}---')
-        main(scene)
+        for mode in ['train', 'test']:
+            print(f'predict semantic: {mode}')
+            main(scene, mode)

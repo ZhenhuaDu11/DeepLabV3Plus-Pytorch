@@ -166,9 +166,10 @@ def main(scene, mode):
 
 if __name__ == '__main__':
     setup_seed(42)
-    scene_list = ['scene0616_00']
-    for scene in scene_list:
-        print(f'---process scene: {scene}---')
-        for mode in ['train', 'test']:
-            print(f'predict semantic: {mode}')
-            main(scene, mode)
+    lis_name_scenes = ['scene0025_00', 'scene0426_00', 'scene0580_00', \
+                   'scene0015_00', 'scene0169_00', 'scene0414_00']
+    for scene in lis_name_scenes:
+        print(f'**process scene: {scene}**\n')
+        for data_mode in ['train', 'test']:
+            print(f'predict semantic: {data_mode}')
+            main(scene, data_mode)
